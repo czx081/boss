@@ -1,0 +1,154 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --panel: #12161b;
+  --panel-2: #171c22;
+  --line: #28303a;
+  --text: #f2f5f7;
+  --muted: #8f9aa6;
+  --accent: #67e8b3;
+  --accent-dark: #143d30;
+  --warning: #f5c76a;
+  --error: #ff7f7f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 960px;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% -20%, #20332e 0, transparent 32%),
+    var(--bg);
+  color: var(--text);
+  font: 15px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+h1, h2, p { margin-top: 0; }
+h1 { font-size: 28px; letter-spacing: -1px; margin-bottom: 8px; }
+h2 { font-size: 17px; margin-bottom: 12px; }
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px minmax(420px, 1fr) 340px;
+  height: 100vh;
+}
+
+.sidebar, .trace-panel {
+  padding: 28px 22px;
+  background: rgba(18, 22, 27, 0.94);
+  overflow-y: auto;
+}
+
+.sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 26px; }
+.trace-panel { border-left: 1px solid var(--line); }
+.chat-panel { display: grid; grid-template-rows: 1fr auto; min-width: 0; }
+.messages { padding: 44px max(32px, 8vw); overflow-y: auto; }
+
+.eyebrow {
+  margin-bottom: 6px;
+  color: var(--accent);
+  font: 700 11px/1.2 ui-monospace, monospace;
+  letter-spacing: 1.8px;
+}
+
+.muted { color: var(--muted); }
+
+.secondary, .session {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  text-align: left;
+}
+
+.secondary { padding: 10px 12px; color: var(--accent); }
+.session-list { display: grid; gap: 8px; }
+.session { padding: 9px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session.active { border-color: var(--accent); background: var(--accent-dark); }
+
+.health {
+  margin-top: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+.health.ready { color: var(--accent); }
+.health.warning { color: var(--warning); }
+
+.welcome { max-width: 580px; margin: 16vh auto 0; }
+.welcome h2 { font-size: 34px; letter-spacing: -1px; }
+.welcome p:last-child { color: var(--muted); font-size: 17px; }
+
+.message {
+  max-width: 720px;
+  margin: 0 auto 22px;
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.message.user { background: #17251f; border-color: #294b3e; }
+.message span { color: var(--muted); font: 700 10px ui-monospace, monospace; letter-spacing: 1.5px; }
+.message p { margin: 7px 0 0; white-space: pre-wrap; }
+.message.pending { opacity: .65; }
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding: 18px max(32px, 8vw) 24px;
+  border-top: 1px solid var(--line);
+  background: rgba(11, 13, 16, .92);
+}
+
+textarea {
+  resize: none;
+  padding: 13px 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  background: var(--panel);
+  color: var(--text);
+}
+textarea:focus { border-color: var(--accent); }
+.composer button {
+  padding: 0 22px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #07120d;
+  font-weight: 800;
+}
+.composer button:disabled { opacity: .5; cursor: wait; }
+
+.trace-heading { display: flex; align-items: start; justify-content: space-between; }
+.badge {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: var(--accent-dark);
+  color: var(--accent);
+  font-size: 11px;
+}
+.traces { display: grid; gap: 10px; margin-top: 16px; }
+.trace { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.trace.error { border-color: #713c3c; }
+.trace-row { display: flex; justify-content: space-between; gap: 10px; }
+.trace-row strong { color: var(--accent); font: 700 12px ui-monospace, monospace; }
+.trace-row span { color: var(--muted); font: 10px ui-monospace, monospace; }
+.trace code { display: inline-block; margin-top: 8px; color: var(--warning); }
+.trace pre {
+  max-height: 180px;
+  margin: 9px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: #bac4ce;
+  font: 11px/1.5 ui-monospace, monospace;
+}
+
