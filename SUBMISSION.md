@@ -22,9 +22,10 @@ python -m uvicorn app.main:app --reload
 
 ## 操作录屏
 
-录屏完成后，建议上传到网盘、公开视频平台或 GitHub Release，并把链接填在这里：
+录屏文件：`2026-06-12 21-53-39.mp4`
 
-> 录屏链接：待补充
+- 夸克网盘：<https://pan.quark.cn/s/9a705b312cb6>
+- 提取码：`ULEY`
 
 具体演示顺序见 [docs/demo-script.md](docs/demo-script.md)。
 
@@ -48,6 +49,5 @@ python -m uvicorn app.main:app --reload
 - [ ] 在同一 Session 中演示 Todo 跨轮查询或更新。
 - [ ] 展示右侧 Execution Trace。
 - [ ] 运行测试并录制 `8 passed`。
-- [ ] 将录屏上传并填写录屏链接。
+- [x] 将录屏上传并填写录屏链接。
 - [ ] 确认 `.env`、API Key 和 `data/agent.db` 未提交。
-

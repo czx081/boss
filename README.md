@@ -111,6 +111,7 @@ docs/          系统设计、Prompt、开发记录、录屏脚本
 
 ## 更多文档
 
+- [笔试提交说明与录屏链接](SUBMISSION.md)
 - [系统设计](docs/system-design.md)
 - [Memory 设计](docs/memory-design.md)
 - [Prompt](docs/prompts.md)
