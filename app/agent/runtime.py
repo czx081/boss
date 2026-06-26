@@ -41,7 +41,7 @@ class AgentRuntime:
         total_tool_count = 0
 
         self.repository.add_message(session_id, "user", user_input)
-        memory_result = self.memory.build(session_id)
+        memory_result = self.memory.build(session_id, user_input)
         messages = memory_result.messages
         trace.record(0, "memory_recall", output_data=memory_result.trace)
         compaction_scheduled = self.summary_compactor.schedule_if_needed(

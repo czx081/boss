@@ -138,11 +138,15 @@ token 工具位于 `app/agent/token_budget.py`。
 | --- | --- |
 | 延迟 trace | 定位耗时来自 memory、LLM 还是 tool |
 | memory 并行召回 | 多个来源同时读取，降低首轮等待 |
+| fast/slow path 分层 | 任务状态走 fast path，长期摘要走 slow path 并可缓存降级 |
+| 按意图选择召回源 | 简单工具请求跳过长期摘要和任务状态 |
 | 召回超时降级 | 单个慢来源不拖垮整体请求 |
 | token 预算裁剪 | 避免固定轮数导致 prompt 过长 |
 | 上下文优先级 | 任务状态优先保留，低价值内容可裁剪 |
+| CurrentStep 注入 | TaskContext 明确当前阶段、下一步和不要做什么 |
 | 只读工具并行 | 多个独立工具调用同时执行 |
 | schema/context cache | 减少重复 JSON Schema 与 memory context 构造 |
+| 版本化缓存失效 | summary、todo、latest message 变化时精确刷新 memory cache |
 | 后台摘要压缩 | 压缩不阻塞用户当前请求 |
 | SSE 阶段流式 | 前端更快看到开始状态和执行过程 |
 | LLM max_tokens | 限制输出长度，控制生成耗时 |

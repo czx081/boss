@@ -22,6 +22,10 @@
 - 跨轮次 Todo 任务状态维护
 - 工具调用 trace 和延迟 trace
 - Memory 并行召回、超时降级、上下文缓存
+- Memory fast path / slow path 分层，慢来源可用缓存降级
+- 按用户意图选择 memory 召回源，简单请求跳过不必要来源
+- TaskContext 内置 CurrentStep，明确当前阶段、下一步和注意力边界
+- Memory cache 使用来源版本指纹失效，trace 中可观察命中原因
 - token 预算驱动的短期记忆裁剪
 - 后台摘要压缩，避免用户请求链路阻塞
 - SSE 阶段事件流式接口，降低前端等待感
@@ -127,14 +131,18 @@ return max steps reached
 
 1. Trace 拆解：记录 memory、LLM、tool、总请求耗时。
 2. Memory 并行召回：summary、history、todo/task 同时读取。
-3. 召回超时降级：单个 memory 来源超时不阻塞整个请求。
-4. 上下文优先级：TaskContext 优先保留，低优先级信息可裁剪。
-5. token 预算裁剪：不再按固定 10 轮截断，按 token 预算控制。
-6. LLM 输出控制：通过 `LLM_MAX_TOKENS` 限制最大输出长度。
-7. 只读工具并行：calculator/search/weather 可并行，todo 保持串行。
-8. 上下文缓存：相同 session 的常用 memory context 可复用。
-9. 后台摘要压缩：摘要任务异步执行，不阻塞当前用户请求。
-10. SSE 阶段流式：前端能更早看到开始状态和执行 trace。
+3. Fast/slow path 分层：history 和 task 走 fast path，summary 走 slow path。
+4. 意图选择召回源：简单计算/天气请求跳过 summary 和 task memory。
+5. 召回超时降级：slow path 超时可用缓存摘要或空摘要继续执行。
+6. 上下文优先级：TaskContext 优先保留，低优先级信息可裁剪。
+7. CurrentStep 注入：明确当前任务阶段、下一步动作和不要做什么。
+8. token 预算裁剪：不再按固定 10 轮截断，按 token 预算控制。
+9. LLM 输出控制：通过 `LLM_MAX_TOKENS` 限制最大输出长度。
+10. 只读工具并行：calculator/search/weather 可并行，todo 保持串行。
+11. 上下文缓存：相同 session 的常用 memory context 可复用。
+12. 版本化缓存失效：summary、todo、latest message 变化时刷新 memory cache。
+13. 后台摘要压缩：摘要任务异步执行，不阻塞当前用户请求。
+14. SSE 阶段流式：前端能更早看到开始状态和执行 trace。
 
 ## Memory 设计
 
