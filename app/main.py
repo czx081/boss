@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 from typing import List
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agent.llm_client import LLMClient
@@ -26,6 +27,7 @@ llm = LLMClient(
     api_key=settings.llm_api_key,
     base_url=settings.llm_base_url,
     model=settings.llm_model,
+    max_tokens=settings.llm_max_tokens,
 )
 runtime = AgentRuntime(
     repository=repository,
@@ -76,3 +78,38 @@ def chat(request: ChatRequest) -> ChatResponse:
         traces=repository.get_traces(request_id),
     )
 
+
+@app.post("/api/chat/stream")
+def chat_stream(request: ChatRequest) -> StreamingResponse:
+    def event_stream():
+        session_id = request.session_id
+        if session_id:
+            if not repository.session_exists(session_id):
+                yield _sse("error", {"detail": "Session not found"})
+                return
+        else:
+            session_id = repository.create_session(request.message)
+
+        yield _sse("start", {"session_id": session_id})
+        answer, request_id = runtime.run(session_id, request.message)
+        traces = repository.get_traces(request_id)
+        for item in traces:
+            yield _sse("trace", item)
+        yield _sse(
+            "answer",
+            {
+                "session_id": session_id,
+                "answer": answer,
+                "traces": traces,
+            },
+        )
+        yield _sse("done", {"session_id": session_id})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+def _sse(event: str, data: dict) -> str:
+    return "event: {}\ndata: {}\n\n".format(
+        event,
+        json.dumps(data, ensure_ascii=False),
+    )

@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.idea/
 .pytest_cache/
 .venv/
 .tools/
@@ -8,5 +9,6 @@ __pycache__/
 data/*.db
 data/*.db-*
 data/*.log
+data/test-dbs/
 recordings/*.mp4
 recordings/*.mov

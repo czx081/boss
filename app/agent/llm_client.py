@@ -14,11 +14,13 @@ class LLMClient:
         api_key: str,
         base_url: str,
         model: str,
+        max_tokens: int = 800,
         timeout: float = 45.0,
     ):
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.max_tokens = max_tokens
         self.timeout = timeout
 
     def chat(
@@ -36,6 +38,7 @@ class LLMClient:
             "tools": tools,
             "tool_choice": "auto",
             "temperature": 0.2,
+            "max_tokens": self.max_tokens,
         }
         headers = {
             "Authorization": "Bearer {}".format(self.api_key),

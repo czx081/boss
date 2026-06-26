@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 from app.repositories import Repository
 from app.tools.calculator import calculate
@@ -15,6 +15,9 @@ class Tool:
     parameters: Dict[str, Any]
     handler: Callable[..., Dict[str, Any]]
     needs_session: bool = False
+    readonly: bool = True
+    can_parallel: bool = True
+    risk_level: str = "low"
 
     def as_llm_schema(self) -> Dict[str, Any]:
         return {
@@ -30,6 +33,7 @@ class Tool:
 class ToolRegistry:
     def __init__(self, repository: Repository):
         todo_tool = TodoTool(repository)
+        self._schema_cache: Optional[List[Dict[str, Any]]] = None
         self._tools = {
             "calculator": Tool(
                 "calculator",
@@ -43,6 +47,9 @@ class ToolRegistry:
                     "additionalProperties": False,
                 },
                 calculate,
+                readonly=True,
+                can_parallel=True,
+                risk_level="low",
             ),
             "search": Tool(
                 "search",
@@ -57,6 +64,9 @@ class ToolRegistry:
                     "additionalProperties": False,
                 },
                 search,
+                readonly=True,
+                can_parallel=True,
+                risk_level="low",
             ),
             "weather": Tool(
                 "weather",
@@ -68,6 +78,9 @@ class ToolRegistry:
                     "additionalProperties": False,
                 },
                 get_weather,
+                readonly=True,
+                can_parallel=True,
+                risk_level="low",
             ),
             "todo": Tool(
                 "todo",
@@ -92,11 +105,20 @@ class ToolRegistry:
                 },
                 todo_tool.execute,
                 needs_session=True,
+                readonly=False,
+                can_parallel=False,
+                risk_level="medium",
             ),
         }
 
     def schemas(self) -> List[Dict[str, Any]]:
-        return [tool.as_llm_schema() for tool in self._tools.values()]
+        if self._schema_cache is None:
+            self._schema_cache = [tool.as_llm_schema() for tool in self._tools.values()]
+        return self._schema_cache
+
+    def can_execute_parallel(self, name: str) -> bool:
+        tool = self._tools.get(name)
+        return bool(tool and tool.readonly and tool.can_parallel)
 
     def execute(self, name: str, arguments: Dict[str, Any], session_id: str) -> Dict[str, Any]:
         tool = self._tools.get(name)
@@ -107,4 +129,3 @@ class ToolRegistry:
         if tool.needs_session:
             return tool.handler(session_id=session_id, **arguments)
         return tool.handler(**arguments)
-

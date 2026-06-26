@@ -1,21 +1,36 @@
 # Minimal Agent
 
-一个不依赖 LangChain、OpenHands 等 Agent 框架的最小可用 Agent。核心 runtime 自行实现 LLM 决策、工具执行、结果回填、循环控制、Session Memory 和执行 Trace。
+一个从零实现的最小可用 Agent。核心 runtime 自己实现，没有使用 LangChain、OpenHands、Spring AI、Dify、n8n 等现成 Agent 框架来完成主流程。
+
+项目目标是展示一个 Agent 最小闭环：
+
+- 接收用户输入
+- 维护多轮 Session 和 Memory
+- 调用真实 OpenAI-compatible LLM API
+- 由 LLM 判断直接回答还是调用工具
+- 执行工具并把结果回填给 LLM
+- 循环执行，直到得到最终答案或达到最大步数
+- 记录 trace，便于观察延迟、工具调用和 memory 召回
 
 ## 功能
 
 - 多轮对话与 SQLite Session 持久化
-- 真实 OpenAI-compatible LLM API
-- 自研 Agent tool-use loop
-- `calculator`、`search`、`weather`、`todo` 四个工具
-- 最大步数限制、参数错误与 API 异常处理
-- 跨轮 Todo 创建、查询和状态更新
-- 网页聊天界面与逐步执行 Trace
-- 使用 Fake LLM 的核心流程测试，不消耗 API Token
+- 真实 LLM API，兼容 OpenAI Chat Completions / tool calling 协议
+- 自研 Agent runtime 主循环
+- 4 个工具：`calculator`、`search`、`weather`、`todo`
+- 最大步数限制与基础异常处理
+- 跨轮次 Todo 任务状态维护
+- 工具调用 trace 和延迟 trace
+- Memory 并行召回、超时降级、上下文缓存
+- token 预算驱动的短期记忆裁剪
+- 后台摘要压缩，避免用户请求链路阻塞
+- SSE 阶段事件流式接口，降低前端等待感
+- Web 聊天界面与右侧执行日志
+- 使用 Fake LLM 的核心测试，不消耗真实 API Token
 
 ## 快速运行
 
-当前项目兼容 Python 3.8+，建议正式环境使用 Python 3.11 或 3.12。
+项目兼容 Python 3.8+，建议使用 Python 3.11 或 3.12。
 
 ```powershell
 cd D:\JAVA\boss
@@ -28,20 +43,32 @@ Copy-Item .env.example .env
 编辑 `.env`，至少设置：
 
 ```dotenv
-LLM_API_KEY=你的真实密钥
-LLM_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
+LLM_API_KEY=你的真实 API Key
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
+LLM_MAX_TOKENS=800
+AGENT_MAX_STEPS=6
+AGENT_HISTORY_LIMIT=20
+AGENT_CONTEXT_TOKEN_BUDGET=12000
+AGENT_SUMMARY_TRIGGER_RATIO=0.5
+AGENT_RECENT_TOKEN_BUDGET=5000
+AGENT_TASK_CONTEXT_TOKEN_BUDGET=1500
+AGENT_MEMORY_RECALL_TIMEOUT_MS=200
+DATABASE_PATH=data/agent.db
 ```
 
-也可填入其他兼容 OpenAI Chat Completions 与 tool calling 协议的服务地址和模型。
+如果使用 OpenAI 或其他兼容服务，只需要替换 `LLM_BASE_URL`、`LLM_MODEL` 和 `LLM_API_KEY`。
 
-启动：
+启动服务：
 
 ```powershell
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
 
-访问 <http://127.0.0.1:8000>。API 文档位于 <http://127.0.0.1:8000/docs>。
+访问：
+
+- Web 页面：<http://127.0.0.1:8000>
+- API 文档：<http://127.0.0.1:8000/docs>
 
 运行测试：
 
@@ -49,7 +76,7 @@ uvicorn app.main:app --reload
 python -m unittest discover -s tests -v
 ```
 
-## 演示流程
+## Demo 流程
 
 在同一个 Session 中依次输入：
 
@@ -59,32 +86,81 @@ python -m unittest discover -s tests -v
 4. `把它标记为完成`
 5. `查询上海天气`
 
-右侧 Trace 会展示 `llm_request`、`tool_call`、`tool_result` 和 `final_answer`。点击“新建 Session”后，任务状态与原 Session 隔离。
+右侧 Trace 会展示：
+
+- `memory_recall`
+- `llm_request`
+- `llm_response`
+- `tool_parallel_start`
+- `tool_result`
+- `final_answer`
+- `request_complete`
+
+其中 `request_complete` 会记录总耗时、LLM 耗时、工具耗时和工具数量；`memory_recall` 会记录召回耗时、token 预算、缓存命中、上下文块保留/裁剪情况。
 
 ## 核心循环
 
-`app/agent/runtime.py` 中的 runtime 每轮执行：
+核心代码位于 `app/agent/runtime.py`。
 
-1. 保存用户消息。
-2. 召回 Session 历史和持久 Todo 状态。
-3. 将消息、工具 JSON Schema 发送给真实 LLM。
-4. 没有工具调用时保存并返回最终答案。
-5. 有工具调用时解析参数、执行工具，将结果作为 `tool` 消息回填。
-6. 继续请求 LLM，直到最终回答或达到 `AGENT_MAX_STEPS`。
+```text
+save user message
+build memory context
+record memory trace
 
-核心流程只使用普通 Python、HTTP 请求和 JSON 数据结构，没有使用现成 Agent runtime。
+for step in max_steps:
+    call llm
+    if llm returns final answer:
+        save answer
+        return
+    if llm returns tool calls:
+        execute tools
+        append tool results
+
+return max steps reached
+```
+
+这个主循环没有依赖现成 Agent 框架。工具注册、工具执行、结果回填、trace、memory 构造和最大步数控制都由项目代码自己完成。
+
+## 低延迟优化
+
+这版根据面试沟通重点做了延迟优化：
+
+1. Trace 拆解：记录 memory、LLM、tool、总请求耗时。
+2. Memory 并行召回：summary、history、todo/task 同时读取。
+3. 召回超时降级：单个 memory 来源超时不阻塞整个请求。
+4. 上下文优先级：TaskContext 优先保留，低优先级信息可裁剪。
+5. token 预算裁剪：不再按固定 10 轮截断，按 token 预算控制。
+6. LLM 输出控制：通过 `LLM_MAX_TOKENS` 限制最大输出长度。
+7. 只读工具并行：calculator/search/weather 可并行，todo 保持串行。
+8. 上下文缓存：相同 session 的常用 memory context 可复用。
+9. 后台摘要压缩：摘要任务异步执行，不阻塞当前用户请求。
+10. SSE 阶段流式：前端能更早看到开始状态和执行 trace。
 
 ## Memory 设计
 
-召回发生在每次 `AgentRuntime.run` 开始时：
+Memory 召回发生在每次 `AgentRuntime.run` 保存当前用户消息之后、第一次 LLM 调用之前。
 
-- 从 `messages` 表读取当前 Session 最近 `AGENT_HISTORY_LIMIT` 条消息。
-- 从 `todos` 表读取当前 Session 的全部任务状态。
-- 第一条消息放固定 System Prompt。
-- 第二条 System Message 放结构化 Session 状态。
-- 之后按时间顺序放历史对话。
+Prompt 结构：
 
-工具调用产生的中间消息只保留在当前执行循环中；最终回答和用户消息持久化。这避免下轮构造出缺少配对关系的历史 `tool_call`，同时持久任务状态由独立 Todo 表可靠保存。
+```text
+System Prompt
+  |
+Structured Memory Context
+  |-- <TaskContext>
+  |-- <RecentConversationPolicy>
+  |-- <SessionSummary>
+  `-- <MemoryBudget>
+  |
+Recent Conversation
+```
+
+关键设计：
+
+- `SessionSummary` 承接长期压缩记忆。
+- `TaskContext` 单独注入任务状态，不混入普通对话历史。
+- 最近对话按 `AGENT_RECENT_TOKEN_BUDGET` 裁剪。
+- 上下文块有优先级，任务状态优先于摘要和预算说明。
+- 达到 `AGENT_CONTEXT_TOKEN_BUDGET * AGENT_SUMMARY_TRIGGER_RATIO` 后触发后台摘要压缩。
 
 详细说明见 [docs/memory-design.md](docs/memory-design.md)。
 
@@ -92,28 +168,29 @@ python -m unittest discover -s tests -v
 
 ```text
 app/
-  agent/       LLM 客户端、Memory、Prompt、Runtime、Trace
-  tools/       工具实现与注册中心
-  static/      网页界面
-  database.py  SQLite schema 和连接
+  agent/          LLM 客户端、Memory、Prompt、Runtime、Summary、Token Budget
+  tools/          工具实现与注册中心
+  static/         Web 页面
+  database.py     SQLite schema
   repositories.py 持久化访问
-  main.py      FastAPI 接口
-tests/         工具、Memory、持久化和 Runtime 测试
-docs/          系统设计、Prompt、开发记录、录屏脚本
+  main.py         FastAPI 接口
+tests/            单元测试
+docs/             系统设计、Memory 设计、Prompt、开发记录、录屏脚本
 ```
 
 ## 已知边界
 
-- `search` 和 `weather` 按题目允许采用 mock，结果不代表真实网络数据。
-- 当前 Memory 使用最近消息窗口加结构化任务状态，未实现向量检索。
-- Chat Completions 服务必须支持 OpenAI 风格的 `tools` / `tool_calls`。
-- Demo 页面切换 Session 后不回显旧聊天内容，但后端会继续召回该 Session 历史。
+- `search` 和 `weather` 是题目允许的 mock 工具，不代表真实网络数据。
+- SSE 当前是阶段事件流式，不是 token-by-token 的模型输出流式。
+- token 估算使用轻量近似算法，不是模型官方 tokenizer。
+- 当前 TaskContext 由 Todo 表承载，复杂业务可继续扩展为 Task / Step / Artifact 模型。
+- LLM 服务需要支持 OpenAI 风格的 `tools` / `tool_calls`。
 
-## 更多文档
+## 提交材料
 
-- [笔试提交说明与录屏链接](SUBMISSION.md)
+- [提交说明](SUBMISSION.md)
 - [系统设计](docs/system-design.md)
 - [Memory 设计](docs/memory-design.md)
-- [Prompt](docs/prompts.md)
+- [AI Prompt](docs/prompts.md)
 - [AI Prompt 与问题解决记录](docs/ai-development-log.md)
 - [录屏脚本](docs/demo-script.md)

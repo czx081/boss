@@ -30,6 +30,30 @@ function appendMessage(role, content) {
   `;
   messages.appendChild(element);
   messages.scrollTop = messages.scrollHeight;
+  return element;
+}
+
+function setMessage(element, content) {
+  element.querySelector("p").textContent = content;
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function appendTrace(item) {
+  const placeholder = traces.querySelector(".muted");
+  if (placeholder) traces.innerHTML = "";
+  const element = document.createElement("article");
+  element.className = `trace ${item.error ? "error" : ""}`;
+  const detail = item.error || item.output || item.input;
+  element.innerHTML = `
+    <div class="trace-row">
+      <strong>${escapeHtml(item.event)}</strong>
+      <span>STEP ${item.step}</span>
+    </div>
+    ${item.name ? `<code>${escapeHtml(item.name)}</code>` : ""}
+    ${detail ? `<pre>${escapeHtml(JSON.stringify(detail, null, 2))}</pre>` : ""}
+  `;
+  traces.appendChild(element);
+  stepCount.textContent = `${traces.querySelectorAll(".trace").length} events`;
 }
 
 function renderTraces(items) {
@@ -39,20 +63,7 @@ function renderTraces(items) {
     traces.innerHTML = '<p class="muted">本轮没有执行记录。</p>';
     return;
   }
-  items.forEach((item) => {
-    const element = document.createElement("article");
-    element.className = `trace ${item.error ? "error" : ""}`;
-    const detail = item.error || item.output || item.input;
-    element.innerHTML = `
-      <div class="trace-row">
-        <strong>${escapeHtml(item.event)}</strong>
-        <span>STEP ${item.step}</span>
-      </div>
-      ${item.name ? `<code>${escapeHtml(item.name)}</code>` : ""}
-      ${detail ? `<pre>${escapeHtml(JSON.stringify(detail, null, 2))}</pre>` : ""}
-    `;
-    traces.appendChild(element);
-  });
+  items.forEach(appendTrace);
 }
 
 async function loadHealth() {
@@ -100,38 +111,89 @@ async function sendMessage(content) {
   state.busy = true;
   sendButton.disabled = true;
   appendMessage("user", content);
-  const pending = document.createElement("article");
-  pending.className = "message assistant pending";
-  pending.innerHTML = "<span>AGENT</span><p>正在执行...</p>";
-  messages.appendChild(pending);
+  const pending = appendMessage("assistant", "正在连接 Agent...");
+  pending.classList.add("pending");
+  renderTraces([]);
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message: content,
-        session_id: state.sessionId,
-      }),
-    });
-    const data = await response.json();
-    pending.remove();
-    if (!response.ok) {
-      throw new Error(data.detail || "请求失败");
-    }
-    state.sessionId = data.session_id;
-    localStorage.setItem("minimal-agent-session", data.session_id);
-    appendMessage("assistant", data.answer);
-    renderTraces(data.traces);
+    await streamChat(content, pending);
     await loadSessions();
   } catch (error) {
-    pending.remove();
-    appendMessage("assistant", `请求失败：${error.message}`);
+    setMessage(pending, `请求失败：${error.message}`);
   } finally {
+    pending.classList.remove("pending");
     state.busy = false;
     sendButton.disabled = false;
     input.focus();
   }
+}
+
+async function streamChat(content, pending) {
+  const response = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: content,
+      session_id: state.sessionId,
+    }),
+  });
+  if (!response.ok || !response.body) {
+    throw new Error("流式请求失败");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop();
+    for (const part of parts) {
+      handleSseEvent(part, pending);
+    }
+  }
+  if (buffer.trim()) {
+    handleSseEvent(buffer, pending);
+  }
+}
+
+function handleSseEvent(raw, pending) {
+  const lines = raw.split("\n");
+  const eventLine = lines.find((line) => line.startsWith("event:"));
+  const dataLine = lines.find((line) => line.startsWith("data:"));
+  if (!eventLine || !dataLine) return;
+  const event = eventLine.slice("event:".length).trim();
+  const data = JSON.parse(dataLine.slice("data:".length).trim());
+
+  if (event === "start") {
+    state.sessionId = data.session_id;
+    localStorage.setItem("minimal-agent-session", data.session_id);
+    setMessage(pending, "已开始执行，正在召回 memory...");
+  } else if (event === "trace") {
+    appendTrace(data);
+    setMessage(pending, stageText(data.event));
+  } else if (event === "answer") {
+    state.sessionId = data.session_id;
+    localStorage.setItem("minimal-agent-session", data.session_id);
+    setMessage(pending, data.answer);
+  } else if (event === "error") {
+    throw new Error(data.detail || "请求失败");
+  }
+}
+
+function stageText(event) {
+  const labels = {
+    memory_recall: "Memory 召回完成...",
+    llm_request: "正在请求 LLM...",
+    llm_response: "LLM 已返回，正在判断下一步...",
+    tool_parallel_start: "正在并行执行只读工具...",
+    tool_call: "正在调用工具...",
+    tool_result: "工具结果已返回...",
+    final_answer: "正在整理最终回答...",
+    request_complete: "请求完成。",
+  };
+  return labels[event] || `正在执行：${event}`;
 }
 
 form.addEventListener("submit", (event) => {
@@ -165,4 +227,3 @@ document.querySelector("#new-session").addEventListener("click", () => {
 loadHealth();
 loadSessions();
 input.focus();
-

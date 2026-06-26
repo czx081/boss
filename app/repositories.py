@@ -43,6 +43,20 @@ class Repository:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def get_session_summary(self, session_id: str) -> str:
+        with get_connection() as connection:
+            row = connection.execute(
+                "SELECT summary FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return row["summary"] if row else ""
+
+    def update_session_summary(self, session_id: str, summary: str) -> None:
+        with get_connection() as connection:
+            connection.execute(
+                "UPDATE sessions SET summary = ?, updated_at = ? WHERE id = ?",
+                (summary, utc_now(), session_id),
+            )
+
     def add_message(
         self,
         session_id: str,
@@ -183,4 +197,3 @@ class Repository:
             item["output"] = json.loads(item.pop("output_json")) if item["output_json"] else None
             traces.append(item)
         return traces
-
